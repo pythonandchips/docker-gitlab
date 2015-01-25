@@ -54,11 +54,8 @@ sudo -u git -H git clone -q -b v${GITLAB_VERSION} --depth 1 \
 
 cd ${GITLAB_INSTALL_DIR}
 
-# remove HSTS config from the default headers, we configure it in nginx
-sed "/headers\['Strict-Transport-Security'\]/d" -i app/controllers/application_controller.rb
 
 # copy default configurations
-cp lib/support/nginx/gitlab /etc/nginx/sites-enabled/gitlab
 sudo -u git -H cp config/gitlab.yml.example config/gitlab.yml
 sudo -u git -H cp config/resque.yml.example config/resque.yml
 sudo -u git -H cp config/database.yml.mysql config/database.yml
@@ -100,8 +97,6 @@ chown -R git:git /home/git/
 cp lib/support/init.d/gitlab /etc/init.d/gitlab
 chmod +x /etc/init.d/gitlab
 
-# disable default nginx configuration and enable gitlab's nginx configuration
-rm -f /etc/nginx/sites-enabled/default
 
 # disable pam authentication for sshd
 sed 's/UsePAM yes/UsePAM no/' -i /etc/ssh/sshd_config
@@ -111,9 +106,6 @@ echo "UseDNS no" >> /etc/ssh/sshd_config
 # move supervisord.log file to ${GITLAB_LOG_DIR}/supervisor/
 sed 's|^logfile=.*|logfile='"${GITLAB_LOG_DIR}"'/supervisor/supervisord.log ;|' -i /etc/supervisor/supervisord.conf
 
-# move nginx logs to ${GITLAB_LOG_DIR}/nginx
-sed 's|access_log /var/log/nginx/access.log;|access_log '"${GITLAB_LOG_DIR}"'/nginx/access.log;|' -i /etc/nginx/nginx.conf
-sed 's|error_log /var/log/nginx/error.log;|error_log '"${GITLAB_LOG_DIR}"'/nginx/error.log;|' -i /etc/nginx/nginx.conf
 
 # configure supervisord log rotation
 cat > /etc/logrotate.d/supervisord <<EOF
@@ -155,17 +147,6 @@ ${GITLAB_LOG_DIR}/gitlab-shell/*.log {
 EOF
 
 # configure gitlab vhost log rotation
-cat > /etc/logrotate.d/gitlab-nginx <<EOF
-${GITLAB_LOG_DIR}/nginx/*.log {
-  weekly
-  missingok
-  rotate 52
-  compress
-  delaycompress
-  notifempty
-  copytruncate
-}
-EOF
 
 # configure supervisord to start unicorn
 cat > /etc/supervisor/conf.d/unicorn.conf <<EOF
@@ -212,19 +193,6 @@ cat > /etc/supervisor/conf.d/sshd.conf <<EOF
 [program:sshd]
 directory=/
 command=/usr/sbin/sshd -D
-user=root
-autostart=true
-autorestart=true
-stdout_logfile=${GITLAB_LOG_DIR}/supervisor/%(program_name)s.log
-stderr_logfile=${GITLAB_LOG_DIR}/supervisor/%(program_name)s.log
-EOF
-
-# configure supervisord to start nginx
-cat > /etc/supervisor/conf.d/nginx.conf <<EOF
-[program:nginx]
-priority=20
-directory=/tmp
-command=/usr/sbin/nginx -g "daemon off;"
 user=root
 autostart=true
 autorestart=true
